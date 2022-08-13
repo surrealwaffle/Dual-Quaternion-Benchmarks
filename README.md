@@ -1,2 +1,2 @@
-# Dual-Quaternion-Benchmarks
-Benchmarks for products over various dual quaternion implementations
+# Dual Quaternion Benchmarks
+Benchmarks products over various dual quaternion implementations
