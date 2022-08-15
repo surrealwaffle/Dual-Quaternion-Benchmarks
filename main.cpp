@@ -29,7 +29,6 @@ reference_dual_quaternion convert_to_reference_dq(const auto& dq)
 {
    float buf[8];
    dq.output_to(+buf);
-   dq.output_to(+buf + 4);
    auto read = [it = +buf] () mutable -> float { return *it++; };
    return reference_dual_quaternion::from_gen(read);
 }

@@ -102,17 +102,19 @@ struct simd_quaternion
       // p := s + u, s in R, u in R^3
       // q := t + v, t in R, v in R^3
       
-      const auto s = p.real_part();
-      const auto u = p.vector_part();
+      /*
+      // REFERENCE IMPLEMENTATION
+      [[maybe_unused]] const auto s = p.real_part();
+      [[maybe_unused]] const auto u = p.vector_part();
       
-      const auto t = q.real_part();
-      const auto v = q.vector_part();
+      [[maybe_unused]] const auto t = q.real_part();
+      [[maybe_unused]] const auto v = q.vector_part();
+      return { cross(u, v) + s * v + t * u + v4sf{0, 0, 0, s * t - dot(u, v)} };
+      */
       
+      // scalar of cross(p.components, q.components) is 0 for most finite values
       [[maybe_unused]] const auto pcomp = p.components;
       [[maybe_unused]] const auto qcomp = q.components;
-      // w component of cross(pcomp, qcomp) is 0 for most finite values
-      return { cross(u, v) + s * v + t * u + v4sf{0, 0, 0, s * t - dot(u, v)} };
-      /*
       return
       {
          // in {vector, real} format
@@ -121,7 +123,6 @@ struct simd_quaternion
          + q.real_part() * pcomp // {t * u, t * s}
          - v4sf{0, 0, 0, dot(pcomp, qcomp)} // {0, -<u, v> - s * t}
       };
-      */
    }
    
    static constexpr simd_quaternion zero() noexcept
