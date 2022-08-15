@@ -36,3 +36,7 @@ template<typename T> using cvecarg = vecarg<const T>;
 
 template<typename T> using dqarg  = T DUAL_QUATERNION_PARAM_REFERENCE;
 template<typename T> using cdqarg = dqarg<const T>;
+
+// Set this to true to test an implementation against the reference implementation.
+// constexpr bool test_against_reference = true;
+constexpr bool test_against_reference = false;

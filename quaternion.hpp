@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ostream>
 #include <functional>
 #include <type_traits>
 
@@ -9,7 +10,9 @@
 // No SIMD, but the components are aligned to a 16-byte boundary.
 struct reference_quaternion
 {
-   alignas(16) float components[4];
+   static constexpr auto name = "reference_quaternion";
+   
+   alignas(4 * sizeof(float)) float components[4];
    
    static constexpr reference_quaternion zero() noexcept
    {
@@ -25,6 +28,16 @@ struct reference_quaternion
    static constexpr reference_quaternion from_gen(Generator gen) noexcept
    {
       return {gen(), gen(), gen(), gen()};
+   }
+   
+   template<class Iterator>
+   constexpr Iterator output_to(Iterator it) const noexcept
+   {
+      *it++ = components[0];
+      *it++ = components[1];
+      *it++ = components[2];
+      *it++ = components[3];
+      return it;
    }
 };
 
@@ -58,13 +71,15 @@ constexpr reference_quaternion operator*(
 }
 
 // Implements the quaternion product by making use of SIMD extensions
-// Strictly speaking, this is the wrong way of using SIMD.
+// Strictly speaking, this is the wrong way to use SIMD.
 // Whether it's worth it in terms of throughput remains to be seen.
 // GCC/clang are required here, but clang is unsupported because it does not support
 // GCC's vector builtins. Arguably we could write replacements here, as I expect 
 // clang would be able to better optimize the required functions.
 struct simd_quaternion
 {
+   static constexpr auto name = "simd_quaternion";
+   
    // clang/gcc only, vector of float/int
    
    // notation ijkw
@@ -87,16 +102,26 @@ struct simd_quaternion
       // p := s + u, s in R, u in R^3
       // q := t + v, t in R, v in R^3
       
-      const auto pcomp = p.components;
-      const auto qcomp = q.components;
+      const auto s = p.real_part();
+      const auto u = p.vector_part();
+      
+      const auto t = q.real_part();
+      const auto v = q.vector_part();
+      
+      [[maybe_unused]] const auto pcomp = p.components;
+      [[maybe_unused]] const auto qcomp = q.components;
       // w component of cross(pcomp, qcomp) is 0 for most finite values
+      return { cross(u, v) + s * v + t * u + v4sf{0, 0, 0, s * t - dot(u, v)} };
+      /*
       return
       {
+         // in {vector, real} format
          cross(pcomp, qcomp) // {u X v, 0} for most finite values
          + p.real_part() * qcomp // {s * v, s * t}
          + q.real_part() * pcomp // {t * u, t * s}
-         - v4sf{0, 0, 0, dot(pcomp, qcomp)} // -<u, v> - s * t
+         - v4sf{0, 0, 0, dot(pcomp, qcomp)} // {0, -<u, v> - s * t}
       };
+      */
    }
    
    static constexpr simd_quaternion zero() noexcept
@@ -113,6 +138,16 @@ struct simd_quaternion
    static constexpr simd_quaternion from_gen(Generator gen)
    {
       return {v4sf{gen(), gen(), gen(), gen()}};
+   }
+   
+   template<class Iterator>
+   constexpr Iterator output_to(Iterator it) const noexcept
+   {
+      *it++ = components[0];
+      *it++ = components[1];
+      *it++ = components[2];
+      *it++ = components[3];
+      return it;
    }
    
 protected:
@@ -141,7 +176,7 @@ protected:
       //  3. seemingly becomes an optimization barrier for GCC
       
 #     ifdef __SSE3__
-         constexpr bool supports_sse3 = true;
+         constexpr bool supports_sse3 = false;
 #     else
          constexpr bool supports_sse3 = false;
 #     endif // __SSE3__  
@@ -196,6 +231,8 @@ protected:
 template<class Quaternion>
 struct dual_quaternion
 {
+   static constexpr auto name = Quaternion::name;
+   
    Quaternion real;
    Quaternion dual; 
    
@@ -217,6 +254,28 @@ struct dual_quaternion
          Quaternion::from_gen(std::ref(gen)), 
          Quaternion::from_gen(std::ref(gen))
       };
+   }
+   
+   template<class Iterator>
+   constexpr Iterator output_to(Iterator it) const noexcept
+   {
+      it = real.output_to(it);
+      return dual.output_to(it);
+   }
+   
+   template<class Traits>
+   friend std::basic_ostream<char, Traits>& operator<<(
+      std::basic_ostream<char, Traits>& os,
+      const dual_quaternion& dq)
+   {
+      float buf[8];
+      dq.real.output_to(+buf);
+      dq.dual.output_to(+buf + 4);
+      
+      return os
+         << "(" << buf[3] << " + [" << buf[0] << "," << buf[1] << "," << buf[2] << "])"
+         << " + "
+         << "(" << buf[7] << " + [" << buf[4] << "," << buf[5] << "," << buf[6] << "])ε";
    }
 };
 
