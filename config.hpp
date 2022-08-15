@@ -1,23 +1,27 @@
 #pragma once
 
-// Define PASS_QUATERNIONS_BY_REFERENCE to make quaternions passed by reference 
-// (defaults to pass-by-value).
+// Uncomment to make quaternions pass by reference.
+// #define PASS_QUATERNIONS_BY_REFERENCE
+
+// Uncomment to make vectors pass by reference.
+// #define PASS_VECTORS_BY_REFERENCE
+
+// Uncomment to make dual quaternions pass by reference.
+// #define PASS_DUAL_QUATERNIONS_BY_REFERENCE
+
 #ifdef PASS_QUATERNIONS_BY_REFERENCE
 #  define QUATERNION_PARAM_REFERENCE &
 #else
 #  define QUATERNION_PARAM_REFERENCE 
 #endif // PASS_QUATERNIONS_BY_REFERENCE
 
-// Define PASS_VECTORS_BY_REFERENCE to make vectors passed by reference 
-// (defaults to pass-by-value).
+
 #ifdef PASS_VECTORS_BY_REFERENCE
 #  define VECTOR_PARAM_REFERENCE &
 #else
 #  define VECTOR_PARAM_REFERENCE 
 #endif // PASS_QUATERNIONS_BY_REFERENCE
 
-// Define PASS_DUAL_QUATERNIONS_BY_REFERENCE to make dual quaternions passed by 
-// reference (defaults to pass-by-value).
 #ifdef PASS_DUAL_QUATERNIONS_BY_REFERENCE
 #  define DUAL_QUATERNION_PARAM_REFERENCE &
 #else
