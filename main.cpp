@@ -61,7 +61,7 @@ benchmark_result do_benchmark(const int sample_count)
          sample_count,
          sampler
       ), 
-      .simd_quaternion_time = bench_implementation<simd_quaternion>(
+      .simd_quaternion_time = bench_implementation<simd_dual_quaternion>(
          sample_count,
          sampler
       ),

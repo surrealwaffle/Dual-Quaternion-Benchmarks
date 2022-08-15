@@ -248,10 +248,11 @@ constexpr dual_quaternion<Quaternion> operator-(
 
 template<class Quaternion>
 constexpr dual_quaternion<Quaternion> operator*(
-   cqarg<dual_quaternion<Quaternion>> p,
-   cqarg<dual_quaternion<Quaternion>> q) noexcept
+   cdqarg<dual_quaternion<Quaternion>> p,
+   cdqarg<dual_quaternion<Quaternion>> q) noexcept
 {
    return {p.real * q.real, p.real * q.dual + p.dual * q.real};
 }
 
 using reference_dual_quaternion = dual_quaternion<reference_quaternion>;
+using simd_dual_quaternion = dual_quaternion<simd_quaternion>;
