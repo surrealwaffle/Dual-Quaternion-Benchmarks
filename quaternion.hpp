@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iterator>
 #include <ostream>
 #include <functional>
 #include <type_traits>
@@ -270,8 +271,7 @@ struct dual_quaternion
       const dual_quaternion& dq)
    {
       float buf[8];
-      dq.real.output_to(+buf);
-      dq.dual.output_to(+buf + 4);
+      dq.output_to(+buf);
       
       return os
          << "(" << buf[3] << " + [" << buf[0] << "," << buf[1] << "," << buf[2] << "])"
@@ -316,3 +316,49 @@ constexpr dual_quaternion<Quaternion> operator*(
 
 using reference_dual_quaternion = dual_quaternion<reference_quaternion>;
 using simd_dual_quaternion = dual_quaternion<simd_quaternion>;
+
+template<class Implementation, class From>
+constexpr Implementation convert_dual_quaternion(const From& dq)
+{
+   float buf[8];
+   dq.output_to(buf);
+   return Implementation::from_gen(
+      [it = +buf] () mutable -> float { return *it++; }
+   );
+}
+
+template<class From>
+constexpr reference_dual_quaternion convert_to_reference_dq(const From& dq)
+{
+   return convert_dual_quaternion<reference_dual_quaternion>(dq);
+}
+
+// Tests if two quaternions are pointwise-equivalent to within an absolute tolerance
+// Returns true if they are equivalent as above, otherwise false.
+template<class Implementation1, class Implementation2>
+constexpr bool test_dual_quaternions_eq(
+   const Implementation1& dq1,
+   const Implementation2& dq2,
+   float tolerance = 0.1f)
+{
+   float buf1[8];
+   float buf2[8];
+   
+   dq1.output_to(+buf1);
+   dq2.output_to(+buf2);
+   
+   auto first1 = std::begin(buf1);
+   auto last1  = std::end(buf1);
+   auto first2 = std::begin(buf2);
+   
+   for (; first1 != last1; ++first1, ++first2)
+   {
+      const float f1 = *first1;
+      const float f2 = *first2;
+      
+      if (std::abs(f1 - f2) > tolerance)
+         return false;
+   }
+   
+   return true;
+}

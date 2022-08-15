@@ -14,6 +14,8 @@
 
 #include "quaternion.hpp"
 
+// Used for creating test samples
+using rng_engine = std::default_random_engine;
 using benchmark_duration = std::chrono::microseconds;
 
 struct benchmark_result
@@ -23,18 +25,13 @@ struct benchmark_result
    benchmark_duration simd_parallel_time;
 };
 
+// Performs a benchmark on the implementations.
 benchmark_result do_benchmark(int sample_count);
 
-reference_dual_quaternion convert_to_reference_dq(const auto& dq)
-{
-   float buf[8];
-   dq.output_to(+buf);
-   auto read = [it = +buf] () mutable -> float { return *it++; };
-   return reference_dual_quaternion::from_gen(read);
-}
-
+// Tests a dual quaternion Implementation's operator*.
+// Returns true if the tests passed, otherwise false.
 template<class Implementation>
-bool test_dq_implementation();
+bool test_implementation_products();
 
 int main(int argc, char* argv[])
 {
@@ -45,9 +42,9 @@ int main(int argc, char* argv[])
    // Pre-test implementations
    if constexpr (test_against_reference)
    {
-      std::cout << "Testing various implementations" << std::endl;
+      std::cout << "Testing implementations products" << std::endl;
       
-      if (!test_dq_implementation<simd_dual_quaternion>())
+      if (!test_implementation_products<simd_dual_quaternion>())
          return EXIT_FAILURE;
       
       std::cout << "... Done" << std::endl;
@@ -71,9 +68,11 @@ int main(int argc, char* argv[])
    return EXIT_SUCCESS;
 }
 
+// Performs a benchmark of a specific implementation.
 template<class DualQuaternion>
 benchmark_duration bench_implementation(int sample_count, auto sampler);
 
+// Convenient float sample generator.
 auto make_sampler()
 {
    std::random_device rd;
@@ -81,29 +80,6 @@ auto make_sampler()
    std::uniform_real_distribution<float> dist(-100.0f, 100.0f);
    
    return [eng, dist] () mutable { return dist(eng); };
-}
-
-bool test_dqs(auto dq1, auto dq2, float tolerance = 0.1f)
-{
-   float buf1[8];
-   float buf2[8];
-   
-   dq1.output_to(+buf1);
-   dq2.output_to(+buf2);
-   
-   auto first1 = std::begin(buf1);
-   auto last1  = std::end(buf1);
-   auto first2 = std::begin(buf2);
-   
-   for (; first1 != last1; ++first1, ++first2)
-   {
-      const float s = *first1;
-      const float t = *first2;
-      if (std::abs(s - t) > tolerance)
-         return false;
-   }
-   
-   return true;
 }
 
 benchmark_result do_benchmark(const int sample_count)
@@ -139,7 +115,7 @@ std::vector<DualQuaternion> generate_samples(int sample_count, auto sampler)
 // Checks the product of p * q against product using the reference implementation.
 // Returns true if they agree, otherwise false
 template<class DualQuaternionInst>
-bool check_against_reference(
+bool check_product_against_reference(
    DualQuaternionInst p, DualQuaternionInst q,
    DualQuaternionInst product,
    float tolerance = 0.1f)
@@ -148,7 +124,7 @@ bool check_against_reference(
    const auto q_ref = convert_to_reference_dq(q);
    const auto product_ref = p_ref * q_ref;
    
-   const bool nearly_eq = test_dqs(product, product_ref, tolerance);
+   const bool nearly_eq = test_dual_quaternions_eq(product, product_ref, tolerance);
    if (!nearly_eq)
    {
       std::cout
@@ -190,7 +166,7 @@ benchmark_duration bench_implementation(const int sample_count, auto sampler)
          
          if constexpr (test_against_reference)
          {
-            if (!check_against_reference(left, right, product))
+            if (!check_product_against_reference(left, right, product))
                throw std::runtime_error("Implementation may be faulty");
          }
          
@@ -204,30 +180,19 @@ benchmark_duration bench_implementation(const int sample_count, auto sampler)
 }
 
 template<class Implementation>
-bool test_dq_implementation()
+bool test_implementation_products()
 {
    const int runs = 100'000;
    auto sampler = make_sampler();
    
    for (int i = 0; i < runs; ++i)
    {
-      const auto left_ref  = reference_dual_quaternion::from_gen(sampler);
       const auto left_test = Implementation::from_gen(std::ref(sampler));
-      
-      const auto right_ref  = reference_dual_quaternion::from_gen(sampler);
       const auto right_test = Implementation::from_gen(std::ref(sampler));
-      
-      const auto prod_ref  = left_ref * right_ref;
       const auto prod_test = left_test * right_test;
       
-      if (!test_dqs(prod_ref, prod_test))
+      if (!check_product_against_reference(left_test, right_test, prod_test))
       {
-         std::cout
-            << "For implementation " << Implementation::name
-            << "\nProduct of: \n\t" << left_ref << "\n\tand\n\t" << right_ref
-            << "\n\tGot      " << prod_test
-            << "\n\tExpected " << prod_ref
-            << "\n";
          return false;
       }
    }
