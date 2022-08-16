@@ -169,10 +169,11 @@ benchmark_duration bench_implementation(const int sample_count, auto sampler)
    auto first2 = right_samples.begin();
    for (; first1 != last1; ++first1, ++first2)
    {
-      const cqarg<DualQuaternion> left = *first1;
-      const cqarg<DualQuaternion> right = *first2;
+      const DualQuaternion& left = *first1;
+      const DualQuaternion& right = *first2;
       
-      const auto volatile product = left * right;
+      const auto& product = left * right;
+      asm volatile("" : : "rm" (product)); // prevent GCC from optimizing it out
       if constexpr (test_against_reference && is_testable<DualQuaternion>)
       {
          const auto real_product = const_cast<const DualQuaternion&>(product);

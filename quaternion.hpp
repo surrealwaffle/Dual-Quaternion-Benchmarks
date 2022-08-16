@@ -343,7 +343,7 @@ struct alignas(32) dual_quaternion
    }
 };
 
-struct nop_dual_quaternion
+struct alignas(32) nop_dual_quaternion
 {
    static constexpr auto name = "nop_dual_quaternion";
    using do_not_validate = void;
