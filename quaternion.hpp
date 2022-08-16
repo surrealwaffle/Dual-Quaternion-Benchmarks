@@ -158,6 +158,9 @@ constexpr reference_quaternion operator*(
 // Strictly speaking, this is the wrong way to use SIMD - operations such as 
 // a dot product are parallelized. Throughput should not be much greater than the 
 // reference implementation, if at all.
+// On the other hand, for a GPU where there is hardware dedicated for swizzling, 
+// cross products, and dot products, this implementation or a variant thereof might 
+// win out.
 struct simd_quaternion
 {
    static constexpr auto name = "simd_quaternion";
