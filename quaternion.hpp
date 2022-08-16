@@ -20,6 +20,9 @@ typedef float __attribute__((vector_size(4 * sizeof(float)), aligned(4 * sizeof(
 typedef int __attribute__((vector_size(4 * sizeof(int)), aligned(4 * sizeof(int))))   v4si;
 typedef std::uint32_t __attribute__((vector_size(4 * sizeof(uint32_t)), aligned(4 * sizeof(uint32_t)))) v4su;
 
+typedef float __attribute__((vector_size(8 * sizeof(float)), aligned(8 * sizeof(float)))) v8sf;
+typedef int __attribute__((vector_size(8 * sizeof(int)), aligned(8 * sizeof(int))))   v8si;
+
 constexpr float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
 {
    // There are a few problems using the intrinsics for this operation:
@@ -404,10 +407,135 @@ using matrix_dual_quaternion = dual_quaternion<matrix_quaternion>;
 // This type of dual quaternion is intrusive and does not compose quaternions.
 // Instead, it views the product of two dual quaternions as the product of three 
 // pairs of quaternions, plus some addition.
-// 
 struct parallel_dual_quaternion
 {
+   static constexpr auto name = "parallel_dual_quaternion";
    
+   v8sf components; // order is ijkw real-dual pairs
+   
+   template<class Traits>
+   friend std::basic_ostream<char, Traits>& operator<<(
+      std::basic_ostream<char, Traits>& os,
+      const parallel_dual_quaternion& dq)
+   {
+      float buf[8];
+      dq.output_to(+buf);
+      
+      return os
+         << "(" << buf[3] << " + [" << buf[0] << "," << buf[1] << "," << buf[2] << "])"
+         << " + "
+         << "(" << buf[7] << " + [" << buf[4] << "," << buf[5] << "," << buf[6] << "])ε";
+   }
+   
+   template<typename Generator>
+   static constexpr parallel_dual_quaternion from_gen(Generator gen)
+   {
+      const auto x = gen();
+      const auto y = gen();
+      const auto z = gen();
+      const auto w = gen();
+      const auto dx = gen();
+      const auto dy = gen();
+      const auto dz = gen();
+      const auto dw = gen();
+      return {v8sf{x, dx, y, dy, z, dz, w, dw}};
+   }
+   
+   template<typename Iterator>
+   constexpr Iterator output_to(Iterator it) const 
+   {
+      const auto [x,dx,y,dy,z,dz,w,dw] = components;
+      
+      const auto serial_values = {x,y,z,w,dx,dy,dz,dw};
+      for (auto v : serial_values)
+         *it++ = v;
+      return it;
+   }
+   
+   friend constexpr parallel_dual_quaternion operator+(
+      cdqarg<parallel_dual_quaternion> p,
+      cdqarg<parallel_dual_quaternion> q) noexcept
+   {
+      return {p.components + q.components};
+   }
+   
+   friend constexpr parallel_dual_quaternion operator*(
+      cdqarg<parallel_dual_quaternion> p,
+      cdqarg<parallel_dual_quaternion> q) noexcept
+   {
+      // For quaternions A, B, C, D
+      // p := A + Bε, q:= C + Dε
+      // p * q = (A * C) + (A * D + B * C)ε
+      
+      // left:  0, A, B, A
+      // right: 0, D, C, C
+      // 0 is the first element since we're shuffling and adding at the end anyway
+      
+      const auto& pcomp = p.components;     
+      const auto& qcomp = q.components;
+
+      v4sf left_x = __builtin_shufflevector(pcomp, pcomp, -1, 0, 1, 0);
+      left_x[0] = 0;
+      
+      v4sf left_y = __builtin_shufflevector(pcomp, pcomp, -1, 2, 3, 2);
+      left_y[0] = 0;
+      
+      v4sf left_z = __builtin_shufflevector(pcomp, pcomp, -1, 4, 5, 4);
+      left_z[0] = 0;
+      
+      v4sf left_w = __builtin_shufflevector(pcomp, pcomp, -1, 6, 7, 6);
+      left_w[0] = 0;
+      
+      v4sf right_x = __builtin_shufflevector(qcomp, qcomp, -1, 1, 0, 0);
+      right_x[0] = 0;
+      
+      v4sf right_y = __builtin_shufflevector(qcomp, qcomp, -1, 3, 2, 2);
+      right_y[0] = 0;
+      
+      v4sf right_z = __builtin_shufflevector(qcomp, qcomp, -1, 5, 4, 4);
+      right_z[0] = 0;
+      
+      v4sf right_w = __builtin_shufflevector(qcomp, qcomp, -1, 7, 6, 6);
+      right_w[0] = 0;
+      
+      // Now we follow a quaternion product, building up by component
+      v4sf r_x
+         = left_w * right_x 
+         + left_x * right_w
+         + left_y * right_z
+         - left_z * right_y;
+      
+      v4sf r_y
+         = left_w * right_y
+         - left_x * right_z
+         + left_y * right_w
+         + left_z * right_x;
+      
+      v4sf r_z
+         = left_w * right_z
+         + left_x * right_y
+         - left_y * right_x
+         + left_z * right_w;
+      
+      v4sf r_w
+         = left_w * right_w
+         - left_x * right_x
+         - left_y * right_y
+         - left_z * right_z;
+      
+      // Then shuffle and sum
+      r_x += __builtin_shufflevector(r_x, r_x, 3, 2, -1, -1);
+      r_y += __builtin_shufflevector(r_y, r_y, 3, 2, -1, -1);
+      r_z += __builtin_shufflevector(r_z, r_z, 3, 2, -1, -1);
+      r_w += __builtin_shufflevector(r_w, r_w, 3, 2, -1, -1);
+      
+      // Build back up to v8sf
+      const v4sf first_part  = __builtin_shufflevector(r_x, r_y, 0, 1, 4, 5);
+      const v4sf second_part = __builtin_shufflevector(r_z, r_w, 0, 1, 4, 5);
+      const v8sf result = __builtin_shufflevector(first_part, second_part, 0, 1, 2, 3, 4, 5, 6, 7);
+      
+      return {result};
+   }
 };
 
 template<class Implementation, class From>
