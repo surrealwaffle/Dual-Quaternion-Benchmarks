@@ -7,6 +7,73 @@
 
 #include "config.hpp"
 
+// Note: If a quaternion q = w + x * i + y * j + z * k, then an operation that 
+// serializes from or to q is done in the order x, y, z, w.
+
+// Support vector types and operations
+
+// notation/order ijkw
+typedef float __attribute__((vector_size(4 * sizeof(float)), aligned(4 * sizeof(float)))) v4sf;
+typedef int __attribute__((vector_size(4 * sizeof(int)), aligned(4 * sizeof(int))))   v4si;
+
+constexpr float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
+{
+   // There are a few problems using the intrinsics for this operation:
+   //  1. not portable to different architectures;
+   //  2. not constexpr friendly (not a big issue);
+   //  3. seemingly becomes an optimization barrier for GCC
+   
+#  ifdef __SSE3__
+      constexpr bool supports_sse3 = true;
+#  else
+      constexpr bool supports_sse3 = false;
+#  endif // __SSE3__  
+   
+   if (std::is_constant_evaluated() || !supports_sse3)
+   {
+      const auto shuf = __builtin_shuffle(u, v4si{1, 1, 3, 3});
+      const auto sums = u + shuf;
+      return (sums + __builtin_shuffle(sums, v4si{2, 3, 2, 3}))[0];
+   } else 
+   {
+      // GCC omits the temporary, but GCC emits very close code to this when 
+      // AVX is enabled.
+      auto x = u;
+      v4sf temp;
+      __asm ( // x -> {a, b, c, d}
+         "movshdup %[x], %[temp] \n\t" // temp -> {b, b, d, d}
+         "addps    %[temp], %[x] \n\t" // x    -> {a+b, b+b, c+d, d+d}
+         "movhlps  %[x], %[temp] \n\t" // temp -> {c+d, d+d, d, d}
+         "addss    %[temp], %[x] \n\t" // x    -> {(a+b)+(c+d), ...}
+         : [x] "+x" (x), [temp] "=x" (temp)
+         : // no input-only operands, a is read-and-write
+         : // no explicit clobbers needed
+      );
+      return x[0];
+   }
+}
+
+constexpr float dot(
+   const v4sf VECTOR_PARAM_REFERENCE u,
+   const v4sf VECTOR_PARAM_REFERENCE v) noexcept
+{
+   return hsum(u * v);
+}
+
+// result w component is mathematically 0
+// as an expression, it is u[3] * v[3] - v[3] * u[3]
+static constexpr v4sf cross(
+   const v4sf VECTOR_PARAM_REFERENCE u, 
+   const v4sf VECTOR_PARAM_REFERENCE v) noexcept
+{
+   const v4sf t0 = __builtin_shuffle(u, v4si{1, 2, 0, 3});
+   const v4sf t1 = __builtin_shuffle(v, v4si{1, 2, 0, 3});
+   return __builtin_shuffle(
+     u * t1 - v * t0,
+     v4si{1, 2, 0, 3}
+   );
+}
+
 // Basic quaternion implementation in xyzw order.
 // No SIMD, but the components are aligned to a 16-byte boundary.
 struct reference_quaternion
@@ -83,10 +150,6 @@ struct simd_quaternion
    
    // clang/gcc only, vector of float/int
    
-   // notation ijkw
-   typedef float __attribute__((vector_size(4 * sizeof(float)), aligned(4 * sizeof(float)))) v4sf;
-   typedef int __attribute__((vector_size(4 * sizeof(int)), aligned(4 * sizeof(int))))   v4si;
-   
    v4sf components;
    
    friend constexpr simd_quaternion operator+(
@@ -102,17 +165,7 @@ struct simd_quaternion
    {
       // p := s + u, s in R, u in R^3
       // q := t + v, t in R, v in R^3
-      
-      /*
-      // REFERENCE IMPLEMENTATION
-      [[maybe_unused]] const auto s = p.real_part();
-      [[maybe_unused]] const auto u = p.vector_part();
-      
-      [[maybe_unused]] const auto t = q.real_part();
-      [[maybe_unused]] const auto v = q.vector_part();
-      return { cross(u, v) + s * v + t * u + v4sf{0, 0, 0, s * t - dot(u, v)} };
-      */
-      
+
       // scalar of cross(p.components, q.components) is 0 for most finite values
       [[maybe_unused]] const auto pcomp = p.components;
       [[maybe_unused]] const auto qcomp = q.components;
@@ -166,66 +219,6 @@ protected:
       auto x = p.components;
       x[3] = 0;
       return x;
-   }
-
-   // Implements a horizontal sum.
-   static constexpr float hsum(
-      const v4sf VECTOR_PARAM_REFERENCE u) noexcept
-   {
-      // There are a few problems using the intrinsics for this operation:
-      //  1. not portable to different architectures;
-      //  2. not constexpr friendly (not a big issue);
-      //  3. seemingly becomes an optimization barrier for GCC
-      
-#     ifdef __SSE3__
-         constexpr bool supports_sse3 = true;
-#     else
-         constexpr bool supports_sse3 = false;
-#     endif // __SSE3__  
-      
-      if (std::is_constant_evaluated() || !supports_sse3)
-      {
-         const auto shuf = __builtin_shuffle(u, v4si{1, 1, 3, 3});
-         const auto sums = u + shuf;
-         return (sums + __builtin_shuffle(sums, v4si{2, 3, 2, 3}))[0];
-      } else 
-      {
-         // GCC omits the temporary, but GCC emits very close code to this when 
-         // AVX is enabled.
-         auto x = u;
-         v4sf temp;
-         __asm ( // x -> {a, b, c, d}
-            "movshdup %[x], %[temp] \n\t" // temp -> {b, b, d, d}
-            "addps    %[temp], %[x] \n\t" // x    -> {a+b, b+b, c+d, d+d}
-            "movhlps  %[x], %[temp] \n\t" // temp -> {c+d, d+d, d, d}
-            "addss    %[temp], %[x] \n\t" // x    -> {(a+b)+(c+d), ...}
-            : [x] "+x" (x), [temp] "=x" (temp)
-            : // no input-only operands, a is read-and-write
-            : // no explicit clobbers needed
-         );
-         return x[0];
-      }
-   }
-   
-   // result w component is mathematically 0
-   // as an expression, it is u[3] * v[3] - v[3] * u[3]
-   static constexpr v4sf cross(
-      const v4sf VECTOR_PARAM_REFERENCE u, 
-      const v4sf VECTOR_PARAM_REFERENCE v) noexcept
-   {
-      const v4sf t0 = __builtin_shuffle(u, v4si{1, 2, 0, 3});
-      const v4sf t1 = __builtin_shuffle(v, v4si{1, 2, 0, 3});
-      return __builtin_shuffle(
-        u * t1 - v * t0,
-        v4si{1, 2, 0, 3}
-      );
-   }
-   
-   static constexpr float dot(
-      const v4sf VECTOR_PARAM_REFERENCE u, 
-      const v4sf VECTOR_PARAM_REFERENCE v) noexcept
-   {
-      return hsum(u * v);
    }
 };
 
