@@ -178,7 +178,7 @@ protected:
       //  3. seemingly becomes an optimization barrier for GCC
       
 #     ifdef __SSE3__
-         constexpr bool supports_sse3 = false;
+         constexpr bool supports_sse3 = true;
 #     else
          constexpr bool supports_sse3 = false;
 #     endif // __SSE3__  
