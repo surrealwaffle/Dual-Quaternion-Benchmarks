@@ -22,7 +22,7 @@ struct benchmark_result
 {
    benchmark_duration reference_time;
    benchmark_duration simd_quaternion_time;
-   benchmark_duration simd_parallel_time;
+   benchmark_duration matrix_quaternion_time;
 };
 
 // Performs a benchmark on the implementations.
@@ -63,7 +63,7 @@ int main(int argc, char* argv[])
       << "sample_count: " << sample_count << "\n"
       << "reference_time: " << result.reference_time << "\n"
       << "simd_quaternion_time: " << result.simd_quaternion_time << "\n"
-      << "simd_parallel_time: " << result.simd_parallel_time << "\n";
+      << "matrix_quaternion_time: " << result.matrix_quaternion_time << "\n";
    
    return EXIT_SUCCESS;
 }
@@ -92,6 +92,10 @@ benchmark_result do_benchmark(const int sample_count)
          sampler
       ), 
       .simd_quaternion_time = bench_implementation<simd_dual_quaternion>(
+         sample_count,
+         sampler
+      ),
+      .matrix_quaternion_time = bench_implementation<matrix_dual_quaternion>(
          sample_count,
          sampler
       ),

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+
+#include <array>
 #include <iterator>
 #include <ostream>
 #include <functional>
@@ -15,6 +18,7 @@
 // notation/order ijkw
 typedef float __attribute__((vector_size(4 * sizeof(float)), aligned(4 * sizeof(float)))) v4sf;
 typedef int __attribute__((vector_size(4 * sizeof(int)), aligned(4 * sizeof(int))))   v4si;
+typedef std::uint32_t __attribute__((vector_size(4 * sizeof(uint32_t)), aligned(4 * sizeof(uint32_t)))) v4su;
 
 constexpr float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
 {
@@ -62,7 +66,7 @@ constexpr float dot(
 
 // result w component is mathematically 0
 // as an expression, it is u[3] * v[3] - v[3] * u[3]
-static constexpr v4sf cross(
+constexpr v4sf cross(
    const v4sf VECTOR_PARAM_REFERENCE u, 
    const v4sf VECTOR_PARAM_REFERENCE v) noexcept
 {
@@ -74,8 +78,30 @@ static constexpr v4sf cross(
    );
 }
 
+consteval v4su make_negate_mask(bool b0, bool b1, bool b2, bool b3) noexcept
+{
+   const std::array<bool, 4> ind{b0, b1, b2, b3};
+   return v4su{b0, b1, b2, b3} << 31;
+}
+
+constexpr v4sf select_negate(v4sf x, const v4su mask)
+{
+   if (std::is_constant_evaluated())
+   {
+      for (int i = 0; i < 4; ++i)
+      {
+         if (mask[i]) x[i] = -x[i];
+      }
+      return x;
+   } else 
+   {
+      // looks like really bad abuse of reinterpret_cast but its concise
+      return reinterpret_cast<v4sf>(reinterpret_cast<v4su&>(x) ^ mask);
+   }
+}
+
 // Basic quaternion implementation in xyzw order.
-// No SIMD, but the components are aligned to a 16-byte boundary.
+// No (explicit) SIMD, but the components are aligned to a 16-byte boundary.
 struct reference_quaternion
 {
    static constexpr auto name = "reference_quaternion";
@@ -139,16 +165,12 @@ constexpr reference_quaternion operator*(
 }
 
 // Implements the quaternion product by making use of SIMD extensions
-// Strictly speaking, this is the wrong way to use SIMD.
-// Whether it's worth it in terms of throughput remains to be seen.
-// GCC/clang are required here, but clang is unsupported because it does not support
-// GCC's vector builtins. Arguably we could write replacements here, as I expect 
-// clang would be able to better optimize the required functions.
+// Strictly speaking, this is the wrong way to use SIMD - operations such as 
+// a dot product are parallelized. Throughput should not be much greater than the 
+// reference implementation, if at all.
 struct simd_quaternion
 {
    static constexpr auto name = "simd_quaternion";
-   
-   // clang/gcc only, vector of float/int
    
    v4sf components;
    
@@ -219,6 +241,91 @@ protected:
       auto x = p.components;
       x[3] = 0;
       return x;
+   }
+}; 
+
+// This implementation views quaternion products as a matrix-vector product.
+// In theory, this should yield better throughput than simd_quaternion, but likely 
+// not by much.
+// A potentially better implementation would represent a quaternion as a matrix,
+// but this would come at the cost of a more expensive copy or update operation.
+// Considering that quaternions are usually manipulated with value semantics, this 
+// might optimize too far into the quaternion product.
+struct matrix_quaternion
+{
+   static constexpr auto name = "matrix_quaternion";
+   
+   v4sf components;
+   
+   friend constexpr matrix_quaternion operator+(
+      cqarg<matrix_quaternion> p, 
+      cqarg<matrix_quaternion> q) noexcept
+   {
+      return {p.components + q.components};
+   }
+   
+   friend constexpr matrix_quaternion operator*(
+      cqarg<matrix_quaternion> p,
+      cqarg<matrix_quaternion> q) noexcept
+   {
+      /*
+         With
+            p = p_w + p_x * i + p_y * j + p_z * k
+            q = q_w + q_x * i + q_y * j + q_z * k
+            r = p * q = r_w + r_x * i + r_y * j + r_z * k
+         
+         [ p_w -p_z  p_y  p_x]   [q_x]   [r_x]
+         [ p_z  p_w -p_x  p_y] * [q_y] = [r_y]
+         [-p_y  p_x  p_w  p_z]   [q_z]   [r_z]
+         [-p_x -p_y -p_z  p_w]   [q_w]   [r_w]
+      */
+      
+      // TODO: implement this better 
+      const auto pv = p.components;
+      const auto qv = q.components;
+      const auto [q_x, q_y, q_z, q_w] = qv;
+      return 
+      {
+         (
+            q_x * select_negate(__builtin_shuffle(pv, v4si{3,2,1,0}), make_negate_mask(0,0,1,1))
+            +
+            q_y * select_negate(__builtin_shuffle(pv, v4si{2,3,0,1}), make_negate_mask(1,0,0,1))
+         )
+         +
+         (
+            q_z * select_negate(__builtin_shuffle(pv, v4si{1,0,3,2}), make_negate_mask(0,1,0,1))
+            +
+            q_w * pv
+         )
+      };
+   }
+   
+   static constexpr matrix_quaternion zero() noexcept
+   {
+      return {v4sf{0, 0, 0, 0}};
+   }
+   
+   static constexpr matrix_quaternion identity() noexcept
+   {
+      return {v4sf{0, 0, 0, 1}};
+   }
+   
+   template<typename Generator>
+   static constexpr matrix_quaternion from_gen(Generator gen)
+   {
+      return {v4sf{gen(), gen(), gen(), gen()}};
+   }
+   
+   template<class Iterator>
+   constexpr Iterator output_to(Iterator it) const noexcept
+   {
+      const auto [w, x, y, z] = components;
+      
+      *it++ = components[0];
+      *it++ = components[1];
+      *it++ = components[2];
+      *it++ = components[3];
+      return it;
    }
 };
 
@@ -309,6 +416,7 @@ constexpr dual_quaternion<Quaternion> operator*(
 
 using reference_dual_quaternion = dual_quaternion<reference_quaternion>;
 using simd_dual_quaternion = dual_quaternion<simd_quaternion>;
+using matrix_dual_quaternion = dual_quaternion<matrix_quaternion>;
 
 template<class Implementation, class From>
 constexpr Implementation convert_dual_quaternion(const From& dq)
