@@ -108,16 +108,6 @@ struct reference_quaternion
    
    alignas(4 * sizeof(float)) float components[4];
    
-   static constexpr reference_quaternion zero() noexcept
-   {
-      return {0, 0, 0, 0};
-   }
-   
-   static constexpr reference_quaternion identity() noexcept
-   {
-      return {0, 0, 0, 1};
-   }
-   
    template<typename Generator>
    static constexpr reference_quaternion from_gen(Generator gen) noexcept
    {
@@ -199,16 +189,6 @@ struct simd_quaternion
          + q.real_part() * pcomp // {t * u, t * s}
          - v4sf{0, 0, 0, dot(pcomp, qcomp)} // {0, -<u, v> - s * t}
       };
-   }
-   
-   static constexpr simd_quaternion zero() noexcept
-   {
-      return {v4sf{0, 0, 0, 0}};
-   }
-   
-   static constexpr simd_quaternion identity() noexcept
-   {
-      return {v4sf{0, 0, 0, 1}};
    }
    
    template<typename Generator>
@@ -300,16 +280,6 @@ struct matrix_quaternion
       };
    }
    
-   static constexpr matrix_quaternion zero() noexcept
-   {
-      return {v4sf{0, 0, 0, 0}};
-   }
-   
-   static constexpr matrix_quaternion identity() noexcept
-   {
-      return {v4sf{0, 0, 0, 1}};
-   }
-   
    template<typename Generator>
    static constexpr matrix_quaternion from_gen(Generator gen)
    {
@@ -331,22 +301,12 @@ struct matrix_quaternion
 
 // Basic template for a dual quaternion built over a Quaternion type
 template<class Quaternion>
-struct dual_quaternion
+struct alignas(32) dual_quaternion
 {
    static constexpr auto name = Quaternion::name;
    
    Quaternion real;
    Quaternion dual; 
-   
-   static constexpr dual_quaternion zero() noexcept
-   {
-      return {Quaternion::zero(), Quaternion::zero()};
-   }
-   
-   static constexpr dual_quaternion identity() noexcept
-   {
-      return {Quaternion::identity(), Quaternion::zero()};
-   }
    
    template<typename Generator>
    static constexpr dual_quaternion from_gen(Generator gen) noexcept
@@ -378,6 +338,26 @@ struct dual_quaternion
          << " + "
          << "(" << buf[7] << " + [" << buf[4] << "," << buf[5] << "," << buf[6] << "])ε";
    }
+};
+
+struct nop_dual_quaternion
+{
+   static constexpr auto name = "nop_dual_quaternion";
+   using do_not_validate = void;
+   
+   int i;
+   
+   template<typename Generator>
+   static constexpr nop_dual_quaternion from_gen(Generator) noexcept { return {}; }
+   
+   friend constexpr nop_dual_quaternion operator+(
+      cdqarg<nop_dual_quaternion> p,
+      cdqarg<nop_dual_quaternion> q) noexcept { return {}; }
+   
+   friend constexpr nop_dual_quaternion operator*(
+      cdqarg<nop_dual_quaternion> p,
+      cdqarg<nop_dual_quaternion> q) noexcept { return {}; }
+   
 };
 
 /*
@@ -417,6 +397,15 @@ constexpr dual_quaternion<Quaternion> operator*(
 using reference_dual_quaternion = dual_quaternion<reference_quaternion>;
 using simd_dual_quaternion = dual_quaternion<simd_quaternion>;
 using matrix_dual_quaternion = dual_quaternion<matrix_quaternion>;
+
+// This type of dual quaternion is intrusive and does not compose quaternions.
+// Instead, it views the product of two dual quaternions as the product of three 
+// pairs of quaternions, plus some addition.
+// 
+struct parallel_dual_quaternion
+{
+   
+};
 
 template<class Implementation, class From>
 constexpr Implementation convert_dual_quaternion(const From& dq)
@@ -463,3 +452,6 @@ constexpr bool test_dual_quaternions_eq(
    
    return true;
 }
+
+template<typename T>
+concept is_testable = !requires {typename T::do_not_validate;};

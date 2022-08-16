@@ -20,6 +20,7 @@ using benchmark_duration = std::chrono::microseconds;
 
 struct benchmark_result
 {
+   benchmark_duration nop_time;
    benchmark_duration reference_time;
    benchmark_duration simd_quaternion_time;
    benchmark_duration matrix_quaternion_time;
@@ -46,6 +47,8 @@ int main(int argc, char* argv[])
       
       if (!test_implementation_products<simd_dual_quaternion>())
          return EXIT_FAILURE;
+      if (!test_implementation_products<matrix_dual_quaternion>())
+         return EXIT_FAILURE;
       
       std::cout << "... Done" << std::endl;
    }
@@ -61,6 +64,7 @@ int main(int argc, char* argv[])
    
    std::cout
       << "sample_count: " << sample_count << "\n"
+      << "nop_time: " << result.nop_time << "\n"
       << "reference_time: " << result.reference_time << "\n"
       << "simd_quaternion_time: " << result.simd_quaternion_time << "\n"
       << "matrix_quaternion_time: " << result.matrix_quaternion_time << "\n";
@@ -87,6 +91,10 @@ benchmark_result do_benchmark(const int sample_count)
    auto sampler = make_sampler();
    
    return {
+      .nop_time = bench_implementation<nop_dual_quaternion>(
+         sample_count,
+         sampler
+      ),
       .reference_time = bench_implementation<reference_dual_quaternion>(
          sample_count,
          sampler
@@ -152,33 +160,27 @@ benchmark_duration bench_implementation(const int sample_count, auto sampler)
       sample_count, std::ref(sampler)
    );
    
-   std::vector<DualQuaternion> products;
-   products.resize(sample_count); 
-   
    // This doesn't measure CPU time but there is no clock for that in <chrono>
    using clock = std::chrono::steady_clock;
    
    const auto start = clock::now();
-   std::transform(
-      left_samples.begin(), left_samples.end(),
-      right_samples.begin(),
-      products.begin(),
-      [] (cqarg<DualQuaternion> left, cqarg<DualQuaternion> right)
-         noexcept(!test_against_reference)
+   auto first1 = left_samples.begin();
+   auto last1  = left_samples.end();
+   auto first2 = right_samples.begin();
+   for (; first1 != last1; ++first1, ++first2)
+   {
+      const cqarg<DualQuaternion> left = *first1;
+      const cqarg<DualQuaternion> right = *first2;
+      
+      const auto volatile product = left * right;
+      if constexpr (test_against_reference && is_testable<DualQuaternion>)
       {
-         auto product = left * right;
-         
-         if constexpr (test_against_reference)
-         {
-            if (!check_product_against_reference(left, right, product))
-               throw std::runtime_error("Implementation may be faulty");
-         }
-         
-         return product;
+         const auto real_product = const_cast<const DualQuaternion&>(product);
+         if (!check_product_against_reference(left, right, real_product))
+            throw std::runtime_error("Implementation may be faulty");
       }
-   );
+   }
    const auto end = clock::now();
-   const volatile auto foo = products;
    
    return std::chrono::duration_cast<benchmark_duration>(end - start);
 }
@@ -186,18 +188,21 @@ benchmark_duration bench_implementation(const int sample_count, auto sampler)
 template<class Implementation>
 bool test_implementation_products()
 {
-   const int runs = 100'000;
-   auto sampler = make_sampler();
-   
-   for (int i = 0; i < runs; ++i)
+   if constexpr (is_testable<Implementation>)
    {
-      const auto left_test = Implementation::from_gen(std::ref(sampler));
-      const auto right_test = Implementation::from_gen(std::ref(sampler));
-      const auto prod_test = left_test * right_test;
+      const int runs = 100'000;
+      auto sampler = make_sampler();
       
-      if (!check_product_against_reference(left_test, right_test, prod_test))
+      for (int i = 0; i < runs; ++i)
       {
-         return false;
+         const auto left_test = Implementation::from_gen(std::ref(sampler));
+         const auto right_test = Implementation::from_gen(std::ref(sampler));
+         const auto prod_test = left_test * right_test;
+         
+         if (!check_product_against_reference(left_test, right_test, prod_test))
+         {
+            return false;
+         }
       }
    }
    
