@@ -184,10 +184,10 @@ struct simd_quaternion
       return
       {
          // in {vector, real} format
-         cross(pcomp, qcomp) // {u X v, 0} for most finite values
-         + p.real_part() * qcomp // {s * v, s * t}
-         + q.real_part() * pcomp // {t * u, t * s}
-         - v4sf{0, 0, 0, dot(pcomp, qcomp)} // {0, -<u, v> - s * t}
+         cross(pcomp, qcomp)                 // {u X v, 0} for most finite values
+         + p.real_part() * qcomp             // + {s * v, s * t}
+         + q.real_part() * pcomp             // + {t * u, t * s}
+         - v4sf{0, 0, 0, dot(pcomp, qcomp)}  // - {0, <u, v> + s * t}
       };
    }
    
