@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include <array>
@@ -7,6 +8,7 @@
 #include <ostream>
 #include <functional>
 #include <type_traits>
+#include <utility>
 
 #include "config.hpp"
 
@@ -21,6 +23,7 @@ typedef int __attribute__((vector_size(4 * sizeof(int)), aligned(4 * sizeof(int)
 typedef std::uint32_t __attribute__((vector_size(4 * sizeof(uint32_t)), aligned(4 * sizeof(uint32_t)))) v4su;
 
 typedef float __attribute__((vector_size(8 * sizeof(float)), aligned(8 * sizeof(float)))) v8sf;
+typedef float __attribute__((vector_size(16 * sizeof(float)), aligned(16 * sizeof(float)))) v16sf;
 typedef int __attribute__((vector_size(8 * sizeof(int)), aligned(8 * sizeof(int))))   v8si;
 
 constexpr float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
@@ -81,10 +84,12 @@ constexpr v4sf cross(
    );
 }
 
-consteval v4su make_negate_mask(bool b0, bool b1, bool b2, bool b3) noexcept
+consteval v4su make_negate_mask(std::array<bool, 4> ind) noexcept
 {
-   const std::array<bool, 4> ind{b0, b1, b2, b3};
-   return v4su{b0, b1, b2, b3} << 31;
+   return [&ind] <std::size_t... I> (std::index_sequence<I...>) noexcept
+   {
+      return v4su{ind[I]...} << 31;
+   }(std::make_index_sequence<ind.size()>{});
 }
 
 constexpr v4sf select_negate(v4sf x, const v4su mask)
@@ -273,13 +278,13 @@ struct matrix_quaternion
       return 
       {
          (
-            q_x * select_negate(__builtin_shuffle(pv, v4si{3,2,1,0}), make_negate_mask(0,0,1,1))
+            q_x * select_negate(__builtin_shuffle(pv, v4si{3,2,1,0}), make_negate_mask({0,0,1,1}))
             +
-            q_y * select_negate(__builtin_shuffle(pv, v4si{2,3,0,1}), make_negate_mask(1,0,0,1))
+            q_y * select_negate(__builtin_shuffle(pv, v4si{2,3,0,1}), make_negate_mask({1,0,0,1}))
          )
          +
          (
-            q_z * select_negate(__builtin_shuffle(pv, v4si{1,0,3,2}), make_negate_mask(0,1,0,1))
+            q_z * select_negate(__builtin_shuffle(pv, v4si{1,0,3,2}), make_negate_mask({0,1,0,1}))
             +
             q_w * pv
          )
@@ -499,6 +504,7 @@ struct parallel_dual_quaternion
       right_w[0] = 0;
       
       // Now we follow a quaternion product, building up by component
+      // Note: This is still a bad way of doing this.
       v4sf r_x
          = left_w * right_x 
          + left_x * right_w
