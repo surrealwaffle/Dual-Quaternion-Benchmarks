@@ -28,39 +28,9 @@ typedef std::uint32_t __attribute__((vector_size(8 * sizeof(std::uint32_t)), ali
 
 constexpr float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
 {
-   // There are a few problems using the intrinsics for this operation:
-   //  1. not portable to different architectures;
-   //  2. not constexpr friendly (not a big issue);
-   //  3. seemingly becomes an optimization barrier for GCC
-   
-#  ifdef __SSE3__
-      constexpr bool supports_sse3 = true;
-#  else
-      constexpr bool supports_sse3 = false;
-#  endif // __SSE3__  
-   
-   if (std::is_constant_evaluated() || !supports_sse3)
-   {
-      const auto shuf = __builtin_shuffle(u, v4si{1, 1, 3, 3});
-      const auto sums = u + shuf;
-      return (sums + __builtin_shuffle(sums, v4si{2, 3, 2, 3}))[0];
-   } else 
-   {
-      // GCC omits the temporary, but GCC emits very close code to this when 
-      // AVX is enabled.
-      auto x = u;
-      v4sf temp;
-      __asm ( // x -> {a, b, c, d}
-         "movshdup %[x], %[temp] \n\t" // temp -> {b, b, d, d}
-         "addps    %[temp], %[x] \n\t" // x    -> {a+b, b+b, c+d, d+d}
-         "movhlps  %[x], %[temp] \n\t" // temp -> {c+d, d+d, d, d}
-         "addss    %[temp], %[x] \n\t" // x    -> {(a+b)+(c+d), ...}
-         : [x] "+x" (x), [temp] "=x" (temp)
-         : // no input-only operands, a is read-and-write
-         : // no explicit clobbers needed
-      );
-      return x[0];
-   }
+   const auto shuf = __builtin_shufflevector(u, u, 1, -1, 3, -1);
+   const auto sums = u + shuf;
+   return (sums + __builtin_shufflevector(sums, sums, 2, -1, -1, -1))[0];
 }
 
 constexpr float dot(
