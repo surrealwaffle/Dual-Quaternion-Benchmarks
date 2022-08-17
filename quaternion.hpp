@@ -19,12 +19,12 @@
 
 // notation/order ijkw
 typedef float __attribute__((vector_size(4 * sizeof(float)), aligned(4 * sizeof(float)))) v4sf;
-typedef int __attribute__((vector_size(4 * sizeof(int)), aligned(4 * sizeof(int))))   v4si;
-typedef std::uint32_t __attribute__((vector_size(4 * sizeof(uint32_t)), aligned(4 * sizeof(uint32_t)))) v4su;
+typedef int __attribute__((vector_size(4 * sizeof(int)), aligned(4 * sizeof(int)))) v4si;
+typedef std::uint32_t __attribute__((vector_size(4 * sizeof(std::uint32_t)), aligned(4 * sizeof(std::uint32_t)))) v4su;
 
 typedef float __attribute__((vector_size(8 * sizeof(float)), aligned(8 * sizeof(float)))) v8sf;
-typedef float __attribute__((vector_size(16 * sizeof(float)), aligned(16 * sizeof(float)))) v16sf;
-typedef int __attribute__((vector_size(8 * sizeof(int)), aligned(8 * sizeof(int))))   v8si;
+typedef int __attribute__((vector_size(8 * sizeof(int)), aligned(8 * sizeof(int)))) v8si;
+typedef std::uint32_t __attribute__((vector_size(8 * sizeof(std::uint32_t)), aligned(8 * sizeof(std::uint32_t)))) v8su;
 
 constexpr float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
 {
@@ -84,11 +84,19 @@ constexpr v4sf cross(
    );
 }
 
-consteval v4su make_negate_mask(std::array<bool, 4> ind) noexcept
+consteval v4su make_negate_mask4(std::array<bool, 4> ind) noexcept
 {
    return [&ind] <std::size_t... I> (std::index_sequence<I...>) noexcept
    {
       return v4su{ind[I]...} << 31;
+   }(std::make_index_sequence<ind.size()>{});
+}
+
+consteval v8su make_negate_mask8(std::array<bool, 8> ind) noexcept
+{
+   return [&ind] <std::size_t... I> (std::index_sequence<I...>) noexcept
+   {
+      return v8su{ind[I]...} << 31;
    }(std::make_index_sequence<ind.size()>{});
 }
 
@@ -105,6 +113,22 @@ constexpr v4sf select_negate(v4sf x, const v4su mask)
    {
       // looks like really bad abuse of reinterpret_cast but its concise
       return reinterpret_cast<v4sf>(reinterpret_cast<v4su&>(x) ^ mask);
+   }
+}
+
+constexpr v8sf select_negate(v8sf x, const v8su mask)
+{
+   if (std::is_constant_evaluated())
+   {
+      for (int i = 0; i < 8; ++i)
+      {
+         if (mask[i]) x[i] = -x[i];
+      }
+      return x;
+   } else 
+   {
+      // looks like really bad abuse of reinterpret_cast but its concise
+      return reinterpret_cast<v8sf>(reinterpret_cast<v8su&>(x) ^ mask);
    }
 }
 
@@ -278,13 +302,13 @@ struct matrix_quaternion
       return 
       {
          (
-            q_x * select_negate(__builtin_shuffle(pv, v4si{3,2,1,0}), make_negate_mask({0,0,1,1}))
+            q_x * select_negate(__builtin_shuffle(pv, v4si{3,2,1,0}), make_negate_mask4({0,0,1,1}))
             +
-            q_y * select_negate(__builtin_shuffle(pv, v4si{2,3,0,1}), make_negate_mask({1,0,0,1}))
+            q_y * select_negate(__builtin_shuffle(pv, v4si{2,3,0,1}), make_negate_mask4({1,0,0,1}))
          )
          +
          (
-            q_z * select_negate(__builtin_shuffle(pv, v4si{1,0,3,2}), make_negate_mask({0,1,0,1}))
+            q_z * select_negate(__builtin_shuffle(pv, v4si{1,0,3,2}), make_negate_mask4({0,1,0,1}))
             +
             q_w * pv
          )
