@@ -46,12 +46,10 @@ constexpr v4sf cross(
    const v4sf VECTOR_PARAM_REFERENCE u, 
    const v4sf VECTOR_PARAM_REFERENCE v) noexcept
 {
-   const v4sf t0 = __builtin_shuffle(u, v4si{1, 2, 0, 3});
-   const v4sf t1 = __builtin_shuffle(v, v4si{1, 2, 0, 3});
-   return __builtin_shuffle(
-     u * t1 - v * t0,
-     v4si{1, 2, 0, 3}
-   );
+   const v4sf t0 = __builtin_shufflevector(u, u, 1, 2, 0, 3);
+   const v4sf t1 = __builtin_shufflevector(v, v, 1, 2, 0, 3);
+   const auto tmp = u * t1 - v * t0;
+   return __builtin_shufflevector(tmp, tmp, 1, 2, 0, 3);
 }
 
 consteval v4su make_negate_mask4(std::array<bool, 4> ind) noexcept
@@ -272,13 +270,13 @@ struct matrix_quaternion
       return 
       {
          (
-            q_x * select_negate(__builtin_shuffle(pv, v4si{3,2,1,0}), make_negate_mask4({0,0,1,1}))
+            q_x * select_negate(__builtin_shufflevector(pv, pv, 3,2,1,0), make_negate_mask4({0,0,1,1}))
             +
-            q_y * select_negate(__builtin_shuffle(pv, v4si{2,3,0,1}), make_negate_mask4({1,0,0,1}))
+            q_y * select_negate(__builtin_shufflevector(pv, pv, 2,3,0,1), make_negate_mask4({1,0,0,1}))
          )
          +
          (
-            q_z * select_negate(__builtin_shuffle(pv, v4si{1,0,3,2}), make_negate_mask4({0,1,0,1}))
+            q_z * select_negate(__builtin_shufflevector(pv, pv, 1,0,3,2), make_negate_mask4({0,1,0,1}))
             +
             q_w * pv
          )
