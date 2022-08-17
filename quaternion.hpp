@@ -464,75 +464,61 @@ struct parallel_dual_quaternion
       // p := A + Bε, q:= C + Dε
       // p * q = (A * C) + (A * D + B * C)ε
       
-      // left:  0, A, B, A
-      // right: 0, D, C, C
+      // left:  A, A, B, ??
+      // right: C, D, C, ??
       // 0 is the first element since we're shuffling and adding at the end anyway
       
-      const auto& pcomp = p.components;     
-      const auto& qcomp = q.components;
+      const auto& pc = p.components;     
+      const auto& qc = q.components;
 
-      v4sf left_x = __builtin_shufflevector(pcomp, pcomp, -1, 0, 1, 0);
-      left_x[0] = 0;
+#define ELEMx 0
+#define ELEMy 2
+#define ELEMz 4
+#define ELEMw 6
+
+#define ELEMsink 3
+
+#define SELECT_LEFT(i) __builtin_shufflevector(pc,pc, (i),(i),(i)+1,-1,(i),(i),(i)+1,-1)
+#define SELECT_RIGHT(i,j) __builtin_shufflevector(qc,qc, (i),(i)+1,(i),-1,(j),(j)+1,(j),-1)
+#define NEGATE_FIRST(x) select_negate((x), make_negate_mask8({1,1,1,1,0,0,0,0}))
+#define NEGATE_LAST(x)  select_negate((x), make_negate_mask8({0,0,0,0,1,1,1,1}))
+
+      const v8sf left_x = SELECT_LEFT(ELEMx);
+      const v8sf left_y = SELECT_LEFT(ELEMy);
+      const v8sf left_z = SELECT_LEFT(ELEMz);
+      const v8sf left_w = SELECT_LEFT(ELEMw);
       
-      v4sf left_y = __builtin_shufflevector(pcomp, pcomp, -1, 2, 3, 2);
-      left_y[0] = 0;
+      auto r_xy = left_w * SELECT_RIGHT(ELEMx, ELEMy);
+      auto r_zw = left_w * SELECT_RIGHT(ELEMz, ELEMw);
       
-      v4sf left_z = __builtin_shufflevector(pcomp, pcomp, -1, 4, 5, 4);
-      left_z[0] = 0;
+      r_xy += NEGATE_LAST(left_x * SELECT_RIGHT(ELEMw, ELEMz));
+      r_zw += NEGATE_LAST(left_x * SELECT_RIGHT(ELEMy, ELEMx));
       
-      v4sf left_w = __builtin_shufflevector(pcomp, pcomp, -1, 6, 7, 6);
-      left_w[0] = 0;
+      r_xy += left_y * SELECT_RIGHT(ELEMz,ELEMw);
+      r_zw -= left_y * SELECT_RIGHT(ELEMx,ELEMy);
       
-      v4sf right_x = __builtin_shufflevector(qcomp, qcomp, -1, 1, 0, 0);
-      right_x[0] = 0;
+      // r_xy += NEGATE_FIRST(left_z * SELECT_RIGHT(ELEMy,ELEMx));
+      r_xy -= NEGATE_LAST(left_z * SELECT_RIGHT(ELEMy,ELEMx));
+      r_zw += NEGATE_LAST(left_z * SELECT_RIGHT(ELEMw,ELEMz));
       
-      v4sf right_y = __builtin_shufflevector(qcomp, qcomp, -1, 3, 2, 2);
-      right_y[0] = 0;
+      r_xy[ELEMsink] = 0;
+      r_zw[ELEMsink] = 0;
       
-      v4sf right_z = __builtin_shufflevector(qcomp, qcomp, -1, 5, 4, 4);
-      right_z[0] = 0;
+      r_xy += __builtin_shufflevector(r_xy,r_xy, ELEMsink,2,-1,-1,ELEMsink,4+2,-1,-1);
+      r_zw += __builtin_shufflevector(r_zw,r_zw, ELEMsink,2,-1,-1,ELEMsink,4+2,-1,-1);
       
-      v4sf right_w = __builtin_shufflevector(qcomp, qcomp, -1, 7, 6, 6);
-      right_w[0] = 0;
-      
-      // Now we follow a quaternion product, building up by component
-      // Note: This is still a bad way of doing this.
-      v4sf r_x
-         = left_w * right_x 
-         + left_x * right_w
-         + left_y * right_z
-         - left_z * right_y;
-      
-      v4sf r_y
-         = left_w * right_y
-         - left_x * right_z
-         + left_y * right_w
-         + left_z * right_x;
-      
-      v4sf r_z
-         = left_w * right_z
-         + left_x * right_y
-         - left_y * right_x
-         + left_z * right_w;
-      
-      v4sf r_w
-         = left_w * right_w
-         - left_x * right_x
-         - left_y * right_y
-         - left_z * right_z;
-      
-      // Then shuffle and sum
-      r_x += __builtin_shufflevector(r_x, r_x, 3, 2, -1, -1);
-      r_y += __builtin_shufflevector(r_y, r_y, 3, 2, -1, -1);
-      r_z += __builtin_shufflevector(r_z, r_z, 3, 2, -1, -1);
-      r_w += __builtin_shufflevector(r_w, r_w, 3, 2, -1, -1);
-      
-      // Build back up to v8sf
-      const v4sf first_part  = __builtin_shufflevector(r_x, r_y, 0, 1, 4, 5);
-      const v4sf second_part = __builtin_shufflevector(r_z, r_w, 0, 1, 4, 5);
-      const v8sf result = __builtin_shufflevector(first_part, second_part, 0, 1, 2, 3, 4, 5, 6, 7);
-      
+      const auto result = __builtin_shufflevector(r_xy,r_zw, 0,1,4+0,4+1,8+0,8+1,12+0,12+1);
       return {result};
+
+#undef ELEMx
+#undef ELEMy
+#undef ELEMz
+#undef ELEMw
+#undef ELEMsink
+#undef SELECT_LEFT
+#undef SELECT_RIGHT
+#undef NEGATE_FIRST
+#undef NEGATE_LAST
    }
 };
 
