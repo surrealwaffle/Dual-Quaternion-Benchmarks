@@ -52,52 +52,24 @@ constexpr v4sf cross(
    return __builtin_shufflevector(tmp, tmp, 1, 2, 0, 3);
 }
 
-consteval v4su make_negate_mask4(std::array<bool, 4> ind) noexcept
+template<bool... NegateIndicator>
+   requires (sizeof...(NegateIndicator) == 4)
+constexpr v4sf select_negate(const v4sf VECTOR_PARAM_REFERENCE x) noexcept
 {
-   return [&ind] <std::size_t... I> (std::index_sequence<I...>) noexcept
+   return [&x] <int... I> (std::integer_sequence<int, I...>) noexcept
    {
-      return v4su{ind[I]...} << 31;
-   }(std::make_index_sequence<ind.size()>{});
+      return __builtin_shufflevector(x, -x, I + 4 * NegateIndicator...);
+   }(std::make_integer_sequence<int, 4>{});
 }
 
-consteval v8su make_negate_mask8(std::array<bool, 8> ind) noexcept
+template<bool... NegateIndicator>
+   requires (sizeof...(NegateIndicator) == 8)
+constexpr v8sf select_negate(const v8sf VECTOR_PARAM_REFERENCE x) noexcept
 {
-   return [&ind] <std::size_t... I> (std::index_sequence<I...>) noexcept
+   return [&x] <int... I> (std::integer_sequence<int, I...>) noexcept
    {
-      return v8su{ind[I]...} << 31;
-   }(std::make_index_sequence<ind.size()>{});
-}
-
-constexpr v4sf select_negate(v4sf x, const v4su mask)
-{
-   if (std::is_constant_evaluated())
-   {
-      for (int i = 0; i < 4; ++i)
-      {
-         if (mask[i]) x[i] = -x[i];
-      }
-      return x;
-   } else 
-   {
-      // looks like really bad abuse of reinterpret_cast but its concise
-      return reinterpret_cast<v4sf>(reinterpret_cast<v4su&>(x) ^ mask);
-   }
-}
-
-constexpr v8sf select_negate(v8sf x, const v8su mask)
-{
-   if (std::is_constant_evaluated())
-   {
-      for (int i = 0; i < 8; ++i)
-      {
-         if (mask[i]) x[i] = -x[i];
-      }
-      return x;
-   } else 
-   {
-      // looks like really bad abuse of reinterpret_cast but its concise
-      return reinterpret_cast<v8sf>(reinterpret_cast<v8su&>(x) ^ mask);
-   }
+      return __builtin_shufflevector(x, -x, I + 8 * NegateIndicator...);
+   }(std::make_integer_sequence<int, 8>{});
 }
 
 // Basic quaternion implementation in xyzw order.
@@ -270,13 +242,13 @@ struct matrix_quaternion
       return 
       {
          (
-            q_x * select_negate(__builtin_shufflevector(pv, pv, 3,2,1,0), make_negate_mask4({0,0,1,1}))
+            q_x * select_negate<0,0,1,1>(__builtin_shufflevector(pv, pv, 3,2,1,0))
             +
-            q_y * select_negate(__builtin_shufflevector(pv, pv, 2,3,0,1), make_negate_mask4({1,0,0,1}))
+            q_y * select_negate<1,0,0,1>(__builtin_shufflevector(pv, pv, 2,3,0,1))
          )
          +
          (
-            q_z * select_negate(__builtin_shufflevector(pv, pv, 1,0,3,2), make_negate_mask4({0,1,0,1}))
+            q_z * select_negate<0,1,0,1>(__builtin_shufflevector(pv, pv, 1,0,3,2))
             +
             q_w * pv
          )
@@ -480,8 +452,8 @@ struct parallel_dual_quaternion
 
 #define SELECT_LEFT(i) __builtin_shufflevector(pc,pc, (i),(i),(i)+1,-1,(i),(i),(i)+1,-1)
 #define SELECT_RIGHT(i,j) __builtin_shufflevector(qc,qc, (i),(i)+1,(i),-1,(j),(j)+1,(j),-1)
-#define NEGATE_FIRST(x) select_negate((x), make_negate_mask8({1,1,1,1,0,0,0,0}))
-#define NEGATE_LAST(x)  select_negate((x), make_negate_mask8({0,0,0,0,1,1,1,1}))
+#define NEGATE_FIRST(x) select_negate<1,1,1,1,0,0,0,0>((x))
+#define NEGATE_LAST(x)  select_negate<0,0,0,0,1,1,1,1>((x))
 
       const v8sf left_x = SELECT_LEFT(ELEMx);
       const v8sf left_y = SELECT_LEFT(ELEMy);
