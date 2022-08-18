@@ -50,8 +50,8 @@ constexpr float dot(
    } else 
    {
       // GCC/clang omit the temporaries
-      alignas(4 * sizeof(float)) const float uf[] {u[0], u[1], u[2], u[3]};
-      alignas(4 * sizeof(float)) const float vf[] {v[0], v[1], v[2], v[3]};
+      alignas(v4sf) const float uf[] {u[0], u[1], u[2], u[3]};
+      alignas(v4sf) const float vf[] {v[0], v[1], v[2], v[3]};
       
       return _mm_cvtss_f32(_mm_dp_ps(
          _mm_load_ps(+uf),
@@ -61,6 +61,33 @@ constexpr float dot(
    }
 #endif // __SSE4_1__
 }
+
+// Specialized dot product for specific use-case in simd_quaternion
+constexpr v4sf simd_quaternion_dot(
+   const v4sf VECTOR_PARAM_REFERENCE u,
+   const v4sf VECTOR_PARAM_REFERENCE v) noexcept
+{
+#ifndef __SSE4_1__
+   return v4sf{0, 0, 0, hsum(u * v)};
+#else
+   if (std::is_constant_evaluated())
+   {
+      return v4sf{0, 0, 0, hsum(u * v)};
+   } else 
+   {
+      // GCC/clang omit the temporaries
+      alignas(v4sf) const float uf[] {u[0], u[1], u[2], u[3]};
+      alignas(v4sf) const float vf[] {v[0], v[1], v[2], v[3]};
+      
+      const auto result = _mm_dp_ps(_mm_load_ps(+uf), _mm_load_ps(+vf), 0xF8);
+      
+      alignas(v4sf) float buf[4];
+      _mm_store_ps(+buf, result);
+      return v4sf{buf[0], buf[1], buf[2], buf[3]};
+   }
+#endif // __SSE4_1__
+}
+   
 
 // result w component is mathematically 0
 // as an expression, it is u[3] * v[3] - v[3] * u[3]
@@ -184,7 +211,7 @@ struct simd_quaternion
          cross(pcomp, qcomp)                 // {u X v, 0} for most finite values
          + p.real_part() * qcomp             // + {s * v, s * t}
          + q.real_part() * pcomp             // + {t * u, t * s}
-         - v4sf{0, 0, 0, dot(pcomp, qcomp)}  // - {0, <u, v> + s * t}
+         - simd_quaternion_dot(pcomp, qcomp) // - {0, <u, v> + s * t}
       };
    }
    
@@ -208,16 +235,8 @@ protected:
    constexpr float real_part() const noexcept { return components[3]; }
    constexpr v4sf vector_part() const noexcept
    {
-      auto x = components;
-      x[3] = 0;
-      return x;
-   }
-
-   static constexpr v4sf vector_part(cqarg<simd_quaternion> p) noexcept
-   {
-      auto x = p.components;
-      x[3] = 0;
-      return x;
+      constexpr v4sf zero {0, 0, 0, 0};
+      return __builtin_shufflevector(components, zero, 0, 1, 2, 4);
    }
 }; 
 
