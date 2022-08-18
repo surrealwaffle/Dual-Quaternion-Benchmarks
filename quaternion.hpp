@@ -279,15 +279,44 @@ struct matrix_quaternion
       // TODO: implement this better 
       const auto& pv = p.components;
       const auto& qv = q.components;
-      const auto [q_x, q_y, q_z, q_w] = qv;
+      [[maybe_unused]] const auto [q_x, q_y, q_z, q_w] = qv;
+
+#define INDx 0
+#define INDy 1
+#define INDz 2
+#define INDw 3
+#define NINDx 4
+#define NINDy 5
+#define NINDz 6
+#define NINDw 7
+      
+      /*
+      // Row-major implementation
+      // Yields impressively poor results
+      return  {v4sf{
+         dot(qv, __builtin_shufflevector(pv, -pv, INDw, NINDz, INDy, INDx)),
+         dot(qv, __builtin_shufflevector(pv, -pv, INDz, INDw, NINDx, INDy)),
+         dot(qv, __builtin_shufflevector(pv, -pv, NINDy, INDx, INDw, INDz)),
+         dot(qv, __builtin_shufflevector(pv, -pv, NINDx, NINDy, NINDz, INDw))
+      }};
+      */
+      
+      // Column-major implementation
       return 
       {
-         // 4+* indicates the negative was selected
-         q_x * __builtin_shufflevector(pv, -pv, 3  , 2  , 4+1, 4+0) +
-         q_y * __builtin_shufflevector(pv, -pv, 4+2, 3  , 0  , 4+1) +
-         q_z * __builtin_shufflevector(pv, -pv, 1  , 4+0, 3  , 4+2) +
+         q_x * __builtin_shufflevector(pv, -pv,  INDw,  INDz, NINDy, NINDx) +
+         q_y * __builtin_shufflevector(pv, -pv, NINDz,  INDw,  INDx, NINDy) +
+         q_z * __builtin_shufflevector(pv, -pv,  INDy, NINDx,  INDw, NINDz) +
          q_w * pv
       };
+#undef INDx
+#undef INDy
+#undef INDz
+#undef INDw
+#undef NINDx
+#undef NINDy
+#undef NINDz
+#undef NINDw
    }
    
    template<typename Generator>
@@ -299,8 +328,6 @@ struct matrix_quaternion
    template<class Iterator>
    constexpr Iterator output_to(Iterator it) const noexcept
    {
-      const auto [w, x, y, z] = components;
-      
       *it++ = components[0];
       *it++ = components[1];
       *it++ = components[2];
