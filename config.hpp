@@ -28,6 +28,15 @@
 #  define DUAL_QUATERNION_PARAM_REFERENCE 
 #endif // PASS_QUATERNIONS_BY_REFERENCE
 
+// clang's __builtin_shufflevector isn't constexpr, nor is their subscript operator
+// The correct solution is to create a wrapper for the vector extensions, but 
+// I'm being fairly lazy here.
+#if defined(__clang__)
+#define  BENCH_CONSTEXPR
+#else
+#define  BENCH_CONSTEXPR constexpr
+#endif 
+
 template<typename T> using qarg  = T QUATERNION_PARAM_REFERENCE;
 template<typename T> using cqarg = qarg<const T>;
 

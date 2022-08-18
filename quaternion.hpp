@@ -30,14 +30,14 @@ typedef float __attribute__((vector_size(8 * sizeof(float)), aligned(8 * sizeof(
 typedef int __attribute__((vector_size(8 * sizeof(int)), aligned(8 * sizeof(int)))) v8si;
 typedef std::uint32_t __attribute__((vector_size(8 * sizeof(std::uint32_t)), aligned(8 * sizeof(std::uint32_t)))) v8su;
 
-constexpr float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
+BENCH_CONSTEXPR float hsum(const v4sf VECTOR_PARAM_REFERENCE u) noexcept
 {
    const auto shuf = __builtin_shufflevector(u, u, 1, -1, 3, -1);
    const auto sums = u + shuf;
    return (sums + __builtin_shufflevector(sums, sums, 2, -1, -1, -1))[0];
 }
 
-constexpr float dot(
+BENCH_CONSTEXPR float dot(
    const v4sf VECTOR_PARAM_REFERENCE u,
    const v4sf VECTOR_PARAM_REFERENCE v) noexcept
 {
@@ -63,7 +63,7 @@ constexpr float dot(
 }
 
 // Specialized dot product for specific use-case in simd_quaternion
-constexpr v4sf simd_quaternion_dot(
+BENCH_CONSTEXPR v4sf simd_quaternion_dot(
    const v4sf VECTOR_PARAM_REFERENCE u,
    const v4sf VECTOR_PARAM_REFERENCE v) noexcept
 {
@@ -91,7 +91,7 @@ constexpr v4sf simd_quaternion_dot(
 
 // result w component is mathematically 0
 // as an expression, it is u[3] * v[3] - v[3] * u[3]
-constexpr v4sf cross(
+BENCH_CONSTEXPR v4sf cross(
    const v4sf VECTOR_PARAM_REFERENCE u, 
    const v4sf VECTOR_PARAM_REFERENCE v) noexcept
 {
@@ -103,7 +103,7 @@ constexpr v4sf cross(
 
 template<bool... NegateIndicator>
    requires (sizeof...(NegateIndicator) == 4)
-constexpr v4sf select_negate(const v4sf VECTOR_PARAM_REFERENCE x) noexcept
+BENCH_CONSTEXPR v4sf select_negate(const v4sf VECTOR_PARAM_REFERENCE x) noexcept
 {
    return [&x] <int... I> (std::integer_sequence<int, I...>) noexcept
    {
@@ -113,7 +113,7 @@ constexpr v4sf select_negate(const v4sf VECTOR_PARAM_REFERENCE x) noexcept
 
 template<bool... NegateIndicator>
    requires (sizeof...(NegateIndicator) == 8)
-constexpr v8sf select_negate(const v8sf VECTOR_PARAM_REFERENCE x) noexcept
+BENCH_CONSTEXPR v8sf select_negate(const v8sf VECTOR_PARAM_REFERENCE x) noexcept
 {
    return [&x] <int... I> (std::integer_sequence<int, I...>) noexcept
    {
@@ -195,7 +195,7 @@ struct simd_quaternion
       return {p.components + q.components};
    }
    
-   friend constexpr simd_quaternion operator*(
+   friend BENCH_CONSTEXPR simd_quaternion operator*(
       cqarg<simd_quaternion> p, 
       cqarg<simd_quaternion> q) noexcept
    {
@@ -232,8 +232,8 @@ struct simd_quaternion
    }
    
 protected:
-   constexpr float real_part() const noexcept { return components[3]; }
-   constexpr v4sf vector_part() const noexcept
+   BENCH_CONSTEXPR float real_part() const noexcept { return components[3]; }
+   BENCH_CONSTEXPR v4sf vector_part() const noexcept
    {
       constexpr v4sf zero {0, 0, 0, 0};
       return __builtin_shufflevector(components, zero, 0, 1, 2, 4);
@@ -260,7 +260,7 @@ struct matrix_quaternion
       return {p.components + q.components};
    }
    
-   friend constexpr matrix_quaternion operator*(
+   friend BENCH_CONSTEXPR matrix_quaternion operator*(
       cqarg<matrix_quaternion> p,
       cqarg<matrix_quaternion> q) noexcept
    {
@@ -469,7 +469,7 @@ struct parallel_dual_quaternion
       return {p.components + q.components};
    }
    
-   friend constexpr parallel_dual_quaternion operator*(
+   friend BENCH_CONSTEXPR parallel_dual_quaternion operator*(
       cdqarg<parallel_dual_quaternion> p,
       cdqarg<parallel_dual_quaternion> q) noexcept
    {
