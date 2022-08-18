@@ -87,7 +87,6 @@ BENCH_CONSTEXPR v4sf simd_quaternion_dot(
    }
 #endif // __SSE4_1__
 }
-   
 
 // result w component is mathematically 0
 // as an expression, it is u[3] * v[3] - v[3] * u[3]
@@ -99,26 +98,6 @@ BENCH_CONSTEXPR v4sf cross(
    const v4sf t1 = __builtin_shufflevector(v, v, 1, 2, 0, 3);
    const auto tmp = u * t1 - v * t0;
    return __builtin_shufflevector(tmp, tmp, 1, 2, 0, 3);
-}
-
-template<bool... NegateIndicator>
-   requires (sizeof...(NegateIndicator) == 4)
-BENCH_CONSTEXPR v4sf select_negate(const v4sf VECTOR_PARAM_REFERENCE x) noexcept
-{
-   return [&x] <int... I> (std::integer_sequence<int, I...>) noexcept
-   {
-      return __builtin_shufflevector(x, -x, I + 4 * NegateIndicator...);
-   }(std::make_integer_sequence<int, 4>{});
-}
-
-template<bool... NegateIndicator>
-   requires (sizeof...(NegateIndicator) == 8)
-BENCH_CONSTEXPR v8sf select_negate(const v8sf VECTOR_PARAM_REFERENCE x) noexcept
-{
-   return [&x] <int... I> (std::integer_sequence<int, I...>) noexcept
-   {
-      return __builtin_shufflevector(x, -x, I + 8 * NegateIndicator...);
-   }(std::make_integer_sequence<int, 8>{});
 }
 
 // Basic quaternion implementation in xyzw order.
@@ -505,17 +484,21 @@ struct parallel_dual_quaternion
       const auto& pc = p.components;     
       const auto& qc = q.components;
 
+// indices for use in SELECT_LEFT/SELECT_RIGHT macros below
 #define ELEMx 0
 #define ELEMy 2
 #define ELEMz 4
 #define ELEMw 6
 
+#define ELEMnx 8+0 // negative X
+#define ELEMny 8+2 // negative Y
+#define ELEMnz 8+4 // negative Z
+#define ELEMnw 8+6 // negative W
+
 #define ELEMsink 3
 
 #define SELECT_LEFT(i) __builtin_shufflevector(pc,pc, (i),(i),(i)+1,-1,(i),(i),(i)+1,-1)
-#define SELECT_RIGHT(i,j) __builtin_shufflevector(qc,qc, (i),(i)+1,(i),-1,(j),(j)+1,(j),-1)
-#define NEGATE_FIRST(x) select_negate<1,1,1,1,0,0,0,0>((x))
-#define NEGATE_LAST(x)  select_negate<0,0,0,0,1,1,1,1>((x))
+#define SELECT_RIGHT(i,j) __builtin_shufflevector(qc,-qc, (i),(i)+1,(i),-1,(j),(j)+1,(j),-1)
 
       const v8sf left_x = SELECT_LEFT(ELEMx);
       const v8sf left_y = SELECT_LEFT(ELEMy);
@@ -525,15 +508,14 @@ struct parallel_dual_quaternion
       auto r_xy = left_w * SELECT_RIGHT(ELEMx, ELEMy);
       auto r_zw = left_w * SELECT_RIGHT(ELEMz, ELEMw);
       
-      r_xy += NEGATE_LAST(left_x * SELECT_RIGHT(ELEMw, ELEMz));
-      r_zw += NEGATE_LAST(left_x * SELECT_RIGHT(ELEMy, ELEMx));
+      r_xy += left_x * SELECT_RIGHT(ELEMw, ELEMnz);
+      r_zw += left_x * SELECT_RIGHT(ELEMy, ELEMnx);
       
       r_xy += left_y * SELECT_RIGHT(ELEMz,ELEMw);
       r_zw -= left_y * SELECT_RIGHT(ELEMx,ELEMy);
       
-      // r_xy += NEGATE_FIRST(left_z * SELECT_RIGHT(ELEMy,ELEMx));
-      r_xy -= NEGATE_LAST(left_z * SELECT_RIGHT(ELEMy,ELEMx));
-      r_zw += NEGATE_LAST(left_z * SELECT_RIGHT(ELEMw,ELEMz));
+      r_xy -= left_z * SELECT_RIGHT(ELEMy,ELEMnx);
+      r_zw += left_z * SELECT_RIGHT(ELEMw,ELEMnz);
       
       r_xy[ELEMsink] = 0;
       r_zw[ELEMsink] = 0;
@@ -548,6 +530,10 @@ struct parallel_dual_quaternion
 #undef ELEMy
 #undef ELEMz
 #undef ELEMw
+#undef ELEMnx
+#undef ELEMny
+#undef ELEMnz
+#undef ELEMnw
 #undef ELEMsink
 #undef SELECT_LEFT
 #undef SELECT_RIGHT
