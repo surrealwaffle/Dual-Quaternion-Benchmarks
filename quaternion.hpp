@@ -277,22 +277,16 @@ struct matrix_quaternion
       */
       
       // TODO: implement this better 
-      const auto pv = p.components;
-      const auto qv = q.components;
+      const auto& pv = p.components;
+      const auto& qv = q.components;
       const auto [q_x, q_y, q_z, q_w] = qv;
       return 
       {
-         (
-            q_x * select_negate<0,0,1,1>(__builtin_shufflevector(pv, pv, 3,2,1,0))
-            +
-            q_y * select_negate<1,0,0,1>(__builtin_shufflevector(pv, pv, 2,3,0,1))
-         )
-         +
-         (
-            q_z * select_negate<0,1,0,1>(__builtin_shufflevector(pv, pv, 1,0,3,2))
-            +
-            q_w * pv
-         )
+         // 4+* indicates the negative was selected
+         q_x * __builtin_shufflevector(pv, -pv, 3  , 2  , 4+1, 4+0) +
+         q_y * __builtin_shufflevector(pv, -pv, 4+2, 3  , 0  , 4+1) +
+         q_z * __builtin_shufflevector(pv, -pv, 1  , 4+0, 3  , 4+2) +
+         q_w * pv
       };
    }
    
