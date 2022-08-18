@@ -12,6 +12,10 @@
 
 #include "config.hpp"
 
+#ifdef __SSE4_1__
+#include <smmintrin.h>
+#endif // __SSE4_1__
+
 // Note: If a quaternion q = w + x * i + y * j + z * k, then an operation that 
 // serializes from or to q is done in the order x, y, z, w.
 
@@ -37,7 +41,25 @@ constexpr float dot(
    const v4sf VECTOR_PARAM_REFERENCE u,
    const v4sf VECTOR_PARAM_REFERENCE v) noexcept
 {
+#ifndef __SSE4_1__
    return hsum(u * v);
+#else
+   if (std::is_constant_evaluated())
+   {
+      return hsum(u * v);
+   } else 
+   {
+      // GCC/clang omit the temporaries
+      alignas(4 * sizeof(float)) const float uf[] {u[0], u[1], u[2], u[3]};
+      alignas(4 * sizeof(float)) const float vf[] {v[0], v[1], v[2], v[3]};
+      
+      return _mm_cvtss_f32(_mm_dp_ps(
+         _mm_load_ps(+uf),
+         _mm_load_ps(+vf),
+         0xF1 // select all, store into first single
+      ));
+   }
+#endif // __SSE4_1__
 }
 
 // result w component is mathematically 0
