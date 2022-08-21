@@ -95,7 +95,8 @@ performance, with a few points to consider.
  - The Hamilton product might not play well with GPU shaders, although this would 
    come down to how well the compiler can optimize the operation.
  - Building a matrix in a shader to take advantage of specialized matrix-vector 
-   multiplication circuitry may negatively impact GPU occupancy. 
+   multiplication circuitry may negatively impact GPU occupancy, unless the kernel
+   makes use of registers that would be allocated to each thread regardless.
 
 Accuracy is also a point to consider. It is consided good practice to re-normalize
 your quaternions during long product chains, but only occasionally due to the 
