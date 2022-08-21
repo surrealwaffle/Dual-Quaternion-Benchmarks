@@ -70,7 +70,7 @@ can be broadcasted using `vbroadcastss` (if available).
 
 ### matrix_quaternion
 The quaternion product is implemented by effectively multiplying a matrix by a 
-vector. The implementation need not compute the matrix itself, which can save on 
+vector. The implementation need not store the matrix itself, which can save on 
 some registers.
 
 ### parallel_dual_quaternion
