@@ -80,6 +80,12 @@ accumulating the results. It is doubtful that AVX-512 would significantly improv
 speeds here, because of the hit to core frequency that AVX-512 operations would 
 incur.
 
+There are some other considerations for improvement here. Performing all three 
+products simultaneously only requires 12 pointwise floating-point addition and
+multiplication; one may get better performance or wider applicability by staying 
+within the capabilities of SSE. An accelerated vector wrapper would make testing 
+different SIMD register widths here simpler.
+
 ## Is It Worth Worrying About?
 For most applications, the choice of implementation would not significantly impact 
 performance, with a few points to consider.
